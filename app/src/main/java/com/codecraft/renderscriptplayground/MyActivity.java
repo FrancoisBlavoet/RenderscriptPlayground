@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.Fragment;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.support.v8.renderscript.Allocation;
 import android.support.v8.renderscript.Element;
@@ -75,7 +76,7 @@ public class MyActivity extends Activity {
 
             mRenderScript = RenderScript.create(this.getActivity());
 
-            Bitmap bitmap = groupBlurAndColor();
+            Bitmap bitmap = groupBlurKernelMultColor();
             imageView.setImageBitmap(bitmap);
             return rootView;
         }
@@ -176,9 +177,141 @@ public class MyActivity extends Activity {
 
         }
 
-        private Bitmap blurThenColor() {
-            return null;
+
+        private Bitmap multiplyKernel(Bitmap bitmap) {
+
+            if (bitmap == null ) {
+                bitmap = BitmapFactory.decodeResource(getResources(),R.drawable.lenna);
+            }
+            ScriptC_multiply script = new ScriptC_multiply(mRenderScript);
+            script.set_darkenFactor(0.2f);
+
+            Bitmap outBitmap = bitmap.copy(bitmap.getConfig(), true);
+
+            final Allocation input = Allocation.createFromBitmap(mRenderScript, bitmap,
+                    Allocation.MipmapControl.MIPMAP_NONE,
+                    Allocation.USAGE_SCRIPT | Allocation.USAGE_SHARED);
+
+            final Allocation output = Allocation.createTyped(mRenderScript, input.getType());
+
+            script.forEach_multiply(input, output);
+
+            output.copyTo(outBitmap);
+
+            return outBitmap;
+
         }
+
+        private Bitmap colorKernel(Bitmap bitmap) {
+
+            if (bitmap == null ) {
+                bitmap = BitmapFactory.decodeResource(getResources(),R.drawable.lenna);
+            }
+            ScriptC_color script = new ScriptC_color(mRenderScript);
+            script.set_mixFactor(0.4f);
+            int color = Color.CYAN;
+            script.set_blue(Color.blue(color));
+            script.set_red(Color.red(color));
+            script.set_green(Color.green(color));
+            Bitmap outBitmap = bitmap.copy(bitmap.getConfig(), true);
+
+            final Allocation input = Allocation.createFromBitmap(mRenderScript, bitmap,
+                    Allocation.MipmapControl.MIPMAP_NONE,
+                    Allocation.USAGE_SCRIPT | Allocation.USAGE_SHARED);
+
+            final Allocation output = Allocation.createTyped(mRenderScript, input.getType());
+
+            script.forEach_color(input, output);
+
+
+            output.copyTo(outBitmap);
+
+            return outBitmap;
+
+        }
+
+
+        private Bitmap groupKernelMultColor() {
+            Bitmap bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.lenna);
+            ScriptC_multiply scriptCMultiply = new ScriptC_multiply(mRenderScript);
+            ScriptC_color scriptColor = new ScriptC_color(mRenderScript);
+
+            scriptColor.set_mixFactor(0.4f);
+            int color = Color.YELLOW;
+            scriptColor.set_blue(Color.blue(color));
+            scriptColor.set_red(Color.red(color));
+            scriptColor.set_green(Color.green(color));
+
+            scriptCMultiply.set_darkenFactor(0.6f);
+
+                final Allocation input = Allocation.createFromBitmap(mRenderScript, bitmap,
+                    Allocation.MipmapControl.MIPMAP_NONE,
+                    Allocation.USAGE_SCRIPT | Allocation.USAGE_SHARED);
+
+            Bitmap outBitmap = bitmap.copy(bitmap.getConfig(), true);
+            final Allocation output = Allocation.createTyped(mRenderScript, input.getType());
+
+
+
+
+
+            ScriptGroup.Builder b = new ScriptGroup.Builder(mRenderScript);
+            b.addKernel(scriptCMultiply.getKernelID_multiply());
+            b.addKernel(scriptColor.getKernelID_color());
+            b.addConnection(input.getType(), scriptCMultiply.getKernelID_multiply(), scriptColor.getKernelID_color());
+            ScriptGroup group = b.create();
+
+             group.setInput(scriptCMultiply.getKernelID_multiply(),input);
+            group.setOutput(scriptColor.getKernelID_color(), output);
+
+
+            group.execute();
+            output.copyTo(outBitmap);
+            return outBitmap;
+        }
+
+        private Bitmap groupBlurKernelMultColor() {
+            Bitmap bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.lenna);
+            ScriptC_multiply scriptCMultiply = new ScriptC_multiply(mRenderScript);
+            ScriptC_color scriptColor = new ScriptC_color(mRenderScript);
+            ScriptIntrinsicBlur scriptBlur = ScriptIntrinsicBlur.create(mRenderScript, Element.U8_4(mRenderScript));
+            scriptBlur.setRadius(8f);
+
+            scriptColor.set_mixFactor(0.4f);
+            int color = Color.CYAN;
+            scriptColor.set_blue(Color.blue(color));
+            scriptColor.set_red(Color.red(color));
+            scriptColor.set_green(Color.green(color));
+
+            scriptCMultiply.set_darkenFactor(0.6f);
+
+            final Allocation input = Allocation.createFromBitmap(mRenderScript, bitmap,
+                    Allocation.MipmapControl.MIPMAP_NONE,
+                    Allocation.USAGE_SCRIPT | Allocation.USAGE_SHARED);
+
+            Bitmap outBitmap = bitmap.copy(bitmap.getConfig(), true);
+            final Allocation output = Allocation.createTyped(mRenderScript, input.getType());
+
+
+            ScriptGroup.Builder b = new ScriptGroup.Builder(mRenderScript);
+            b.addKernel(scriptBlur.getKernelID());
+            b.addKernel(scriptCMultiply.getKernelID_multiply());
+            b.addKernel(scriptColor.getKernelID_color());
+            b.addConnection(input.getType(), scriptBlur.getKernelID(), scriptCMultiply.getKernelID_multiply());
+
+            b.addConnection(input.getType(), scriptCMultiply.getKernelID_multiply(), scriptColor.getKernelID_color());
+            ScriptGroup group = b.create();
+            scriptBlur.setInput(input);
+            group.setInput(scriptBlur.getKernelID(),input);
+            group.setOutput(scriptColor.getKernelID_color(), output);
+
+
+            group.execute();
+            output.copyTo(outBitmap);
+            return outBitmap;
+        }
+
+
 
         private Bitmap groupBlurAndColor() {
             Bitmap bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.lenna);
